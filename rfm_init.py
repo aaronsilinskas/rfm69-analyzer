@@ -18,7 +18,7 @@ def init_onboard_rfm69() -> adafruit_rfm69.RFM69 | None:
             frequency=RADIO_FREQ_MHZ,
         )
     except Exception as e:
-        print(f"Error initializing embedded RFM69 module: {e}")
+        print(f"Embedded RFM69 module not detected: {e}")
         return None
 
 
@@ -35,7 +35,7 @@ def init_external_rfm69() -> adafruit_rfm69.RFM69 | None:
             frequency=RADIO_FREQ_MHZ,
         )
     except Exception as e:
-        print(f"Error initializing external RFM69 module: {e}")
+        print(f"External RFM69 module not detected: {e}")
         return None
 
 
