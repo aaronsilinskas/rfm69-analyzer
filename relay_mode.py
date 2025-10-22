@@ -1,3 +1,4 @@
+import random
 import time
 import adafruit_rfm69
 from input import MODE_CONTROLLER, check_serial_input
@@ -7,8 +8,10 @@ from packets import (
     RunTestRequest,
     TestParameters,
     RunTestResponse,
-    decode_packet,
+    check_for_message,
 )
+from rfm_util import attempt_send
+from rgb_indicator import indicate_processing, indicate_ready
 
 
 class RelayMode:
@@ -23,6 +26,7 @@ class RelayMode:
         print(f"\n[TEST] Starting test with parameters:")
         print(f"  Packets: {params.num_packets}")
         print(f"  Delay: {params.delay_ms}ms")
+        print(f"  Stagger: {params.stagger_ms}ms")
         print(f"  High Power: {params.high_power}")
         print(f"  TX Power: {params.tx_power}db")
 
@@ -35,17 +39,19 @@ class RelayMode:
         for i in range(params.num_packets):
             # Send test packet
             response = RunTestResponse.encode(self._device_id, i)
-            self._rfm69.send(response, keep_listening=True)
-
+            attempt_send(self._rfm69, response)
             print(f"[TEST] Sent packet {i+1}/{params.num_packets}")
 
             time.sleep(delay_sec)
+            stagger_ms = random.randint(0, params.stagger_ms)
+            time.sleep(stagger_ms / 1000.0)
 
         print(f"\n[TEST] Complete:")
 
     def run(self):
         """Relay mode - listen for commands from controller"""
         print("[RELAY MODE] Listening for commands...")
+        indicate_ready()
 
         while True:
             # Check for mode switch request
@@ -54,18 +60,16 @@ class RelayMode:
                 return MODE_CONTROLLER
 
             # Listen for packets from controller
-            packet = self._rfm69.receive(timeout=0.1)
-            if packet is not None:
-                rssi = self._rfm69.last_rssi
-
-                request = decode_packet(packet)
+            message, rssi = check_for_message(self._rfm69)
+            if message is not None:
+                indicate_processing()
 
                 # Check if this is a command
-                if isinstance(request, RunTestRequest):
+                if isinstance(message, RunTestRequest):
                     print(f"[RELAY] Received test command | RSSI: {rssi}db")
-                    self._run_test(request)
+                    self._run_test(message)
 
-                elif isinstance(request, InfoRequest):
+                elif isinstance(message, InfoRequest):
                     print(f"[RELAY] Received info request | RSSI: {rssi}db")
                     response = InfoResponse.encode(
                         device_id=self._device_id,
@@ -77,9 +81,12 @@ class RelayMode:
                         frequency_deviation_hz=self._rfm69.frequency_deviation,
                     )
 
-                    self._rfm69.send(response, keep_listening=True)
+                    time.sleep(
+                        random.randint(50, 200) / 1000.0
+                    )  # Random delay to avoid collisions
+                    attempt_send(self._rfm69, response)
                     print("[RELAY] Device info sent to controller")
                 else:
-                    print(f"[RELAY] Unknown command type: {packet}")
+                    print(f"[RELAY] Unknown command type: {message} | RSSI: {rssi}db")
 
-            time.sleep(0.01)
+                indicate_ready()

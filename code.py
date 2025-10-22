@@ -2,19 +2,19 @@ import microcontroller
 from controller_mode import ControllerMode
 from input import MODE_CONTROLLER, MODE_RELAY
 import sys
-from rfm_init import init_rfm69
+from rfm_util import init_rfm69
 from relay_mode import RelayMode
+from rgb_indicator import indicate_error
 
 DEVICE_ID = microcontroller.cpu.uid.hex().upper()
 
 rfm69 = init_rfm69()
 if rfm69 is None:
-    print("Failed to initialize any RFM69 module. Exiting.")
-    sys.exit(1)
+    indicate_error("Failed to initialize any RFM69 module. Exiting.")
 
 current_mode = MODE_RELAY
 relay_mode = RelayMode(rfm69, DEVICE_ID)
-controller_mode = ControllerMode(rfm69)
+controller_mode = ControllerMode(rfm69, DEVICE_ID)
 
 
 # Print device state:
@@ -34,7 +34,10 @@ print("=" * 50 + "\n")
 
 # Main loop
 while True:
-    if current_mode == MODE_RELAY:
-        current_mode = relay_mode.run()
-    elif current_mode == MODE_CONTROLLER:
-        current_mode = controller_mode.run()
+    try:
+        if current_mode == MODE_RELAY:
+            current_mode = relay_mode.run()
+        elif current_mode == MODE_CONTROLLER:
+            current_mode = controller_mode.run()
+    except Exception as e:
+        indicate_error(f"Error in main loop: {e}")

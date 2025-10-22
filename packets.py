@@ -1,6 +1,10 @@
+import adafruit_rfm69
+
+
 class TestParameters:
     num_packets: int = 10
-    delay_ms: int = 250
+    delay_ms: int = 1000
+    stagger_ms: int = 100
     high_power: bool = True
     tx_power: int = 13
 
@@ -9,7 +13,7 @@ class RunTestRequest(TestParameters):
     @staticmethod
     def encode(params: TestParameters) -> bytes:
         return bytes(
-            f"R:{params.num_packets}:{params.delay_ms}:{int(params.high_power)}:{params.tx_power}",
+            f"R:{params.num_packets}:{params.delay_ms}:{params.stagger_ms}:{int(params.high_power)}:{params.tx_power}",
             "utf-8",
         )
 
@@ -18,8 +22,9 @@ class RunTestRequest(TestParameters):
         request = RunTestRequest()
         request.num_packets = int(params[0])
         request.delay_ms = int(params[1])
-        request.high_power = bool(int(params[2]))
-        request.tx_power = int(params[3])
+        request.stagger_ms = int(params[2])
+        request.high_power = bool(int(params[3]))
+        request.tx_power = int(params[4])
         return request
 
 
@@ -107,3 +112,16 @@ def decode_packet(packet: bytes):
         return InfoResponse.decode(params)
 
     return None
+
+
+def check_for_message(rfm69: adafruit_rfm69.RFM69) -> tuple[any | None, float | None]:
+    try:
+        packet = rfm69.receive(timeout=0.1, keep_listening=True)
+        if packet is not None:
+            rssi = rfm69.last_rssi
+            message = decode_packet(packet)
+            return message, rssi
+        return None, None
+    except Exception as e:
+        print(f"Error decoding packet: {e}")
+        return None, None
