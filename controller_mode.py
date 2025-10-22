@@ -1,4 +1,3 @@
-import sys
 import time
 import adafruit_rfm69
 from input import MODE_RELAY, check_serial_input, get_user_input
@@ -8,8 +7,11 @@ from packets import (
     RunTestRequest,
     RunTestResponse,
     TestParameters,
-    decode_packet,
+    check_for_message,
 )
+from rfm_util import attempt_send
+from rgb_indicator import indicate_processing, indicate_ready
+
 
 class TestResult:
     def __init__(self):
@@ -19,10 +21,13 @@ class TestResult:
 
 class ControllerMode:
 
-    def __init__(self, rfm69: adafruit_rfm69.RFM69):
+    def __init__(self, rfm69: adafruit_rfm69.RFM69, device_id: str):
         self._rfm69 = rfm69
+        self._device_id = device_id
         self._test_params = TestParameters()
-        self._distance_A = -27  # Signal strength at 1 meter
+        self._distance_A = 35  # Estimated signal strength at 1 meter
+        self._test_running = False
+        self._test_timeout = 0.0
         self._test_run_results = {}  # device_id -> list of TestResult
 
     def _calculate_distance(self, tx_power, rssi, n):
@@ -94,6 +99,7 @@ class ControllerMode:
     def run(self):
         """Controller mode - send commands to relays"""
         self._show_help()
+        indicate_ready()
 
         while True:
             # Check for commands
@@ -106,25 +112,37 @@ class ControllerMode:
             elif key == "s":
                 # Send test command to relays
                 print("\n[CONTROLLER] Sending test command to relays...")
-                
+                indicate_processing()
+
+                test_params = self._test_params
+
+                self._test_running = True
+                self._test_timeout = time.monotonic() + (
+                    test_params.num_packets * (test_params.delay_ms / 1000.0) + 2
+                )
                 self._test_run_results = {}
-                request = RunTestRequest.encode(self._test_params)
-                self._rfm69.send(request, keep_listening=True)
+
+                request = RunTestRequest.encode(test_params)
+                attempt_send(self._rfm69, request)
                 print(f"[CONTROLLER] Test command sent")
-                
+
             elif key == "c":
                 # Configure parameters
                 print("\n[CONTROLLER] Configure Test Parameters")
                 print("-" * 40)
 
                 num_packets = int(
-                    get_user_input(
-                        "Number of packets", self._test_params.num_packets
-                    )
+                    get_user_input("Number of packets", self._test_params.num_packets)
                 )
                 delay_ms = int(
                     get_user_input(
                         "Delay between packets (ms)", self._test_params.delay_ms
+                    )
+                )
+                stagger_ms = int(
+                    get_user_input(
+                        "Stagger (random delay) between packets (ms)",
+                        self._test_params.stagger_ms,
                     )
                 )
                 high_power_str = get_user_input(
@@ -143,14 +161,16 @@ class ControllerMode:
 
                 self._test_params.num_packets = num_packets
                 self._test_params.delay_ms = delay_ms
+                self._test_params.stagger_ms = stagger_ms
                 self._test_params.high_power = high_power
                 self._test_params.tx_power = tx_power
 
                 print("\n[CONTROLLER] Parameters updated:")
                 print(f"  Packets: {self._test_params.num_packets}")
                 print(f"  Delay: {self._test_params.delay_ms}ms")
+                print(f"  Stagger: {self._test_params.stagger_ms}ms")
                 print(f"  High Power: {self._test_params.high_power}")
-                print(f"  TX Power: {self._test_params.tx_power}db\n")                
+                print(f"  TX Power: {self._test_params.tx_power}db\n")
 
             elif key == "d":
                 # Configure distance calculation parameters
@@ -169,6 +189,7 @@ class ControllerMode:
                 print(f"\n[CONTROLLER] Current test parameters:")
                 print(f"  Packets: {self._test_params.num_packets}")
                 print(f"  Delay: {self._test_params.delay_ms}ms")
+                print(f"  Stagger: {self._test_params.stagger_ms}ms")
                 print(f"  High Power: {self._test_params.high_power}")
                 print(f"  TX Power: {self._test_params.tx_power}db")
                 print(f"\nDistance calculation parameters:")
@@ -181,47 +202,50 @@ class ControllerMode:
             elif key == "q":
                 # Request relay device info
                 print("\n[CONTROLLER] Requesting device info from relays...")
-                
+
                 request = InfoRequest.encode()
-                self._rfm69.send(request, keep_listening=True)
-                print("[CONTROLLER] Info request sent\n")                
+                attempt_send(self._rfm69, request)
+                print("[CONTROLLER] Info request sent\n")
 
             elif key == "i":
                 print(
-                    f"\n[INFO] Temperature: {self._rfm69.temperature}C | TX Power: {self._rfm69.tx_power}dbm | Freq: {self._rfm69.frequency_mhz}mhz\n"
+                    f"\n[INFO] Device: {self._device_id} | Temperature: {self._rfm69.temperature}C | TX Power: {self._rfm69.tx_power}dbm | Freq: {self._rfm69.frequency_mhz}mhz\n"
                 )
             elif key == "h":
                 self._show_help()
 
-            # Listen for responses
-            packet = self._rfm69.receive(timeout=0.1)
-            if packet is not None:
-                rssi = self._rfm69.last_rssi
-
-                response = decode_packet(packet)
-
-                if isinstance(response, RunTestResponse):
-                    if response.device_id not in self._test_run_results:
-                        self._test_run_results[response.device_id] = []
+            # Listen for packets from relays
+            message, rssi = check_for_message(self._rfm69)
+            if message is not None:
+                if isinstance(message, RunTestResponse):
+                    if message.device_id not in self._test_run_results:
+                        self._test_run_results[message.device_id] = []
 
                     result = TestResult()
-                    result.sequence = response.packet_num
+                    result.sequence = message.packet_num
                     result.rssi = rssi
-                    self._test_run_results[response.device_id].append(result)
+                    self._test_run_results[message.device_id].append(result)
 
                     print(
-                        f"\n[CONTROLLER] Received test results from {response.device_id} | {result.sequence} | RSSI: {rssi}db"
+                        f"\n[CONTROLLER] Received test results from {message.device_id} | {result.sequence} | RSSI: {rssi}db"
                     )
-                elif isinstance(response, InfoResponse):
+                elif isinstance(message, InfoResponse):
                     print(f"\n[CONTROLLER] Received device info | RSSI: {rssi}db")
-                    print(f"  Device ID: {response.device_id}")
-                    print(f"  High Power: {response.high_power}")
-                    print(f"  TX Power: {response.tx_power}dbm")
-                    print(f"  Temperature: {response.temperature}C")
-                    print(f"  Frequency: {response.frequency_mhz}mhz")
-                    print(f"  Bitrate: {response.bitrate_kbps / 1000:.1f}kbit/s")
-                    print(
-                        f"  Frequency Deviation: {response.frequency_deviation}hz\n"
-                    )
+                    print(f"  Device ID: {message.device_id}")
+                    print(f"  High Power: {message.high_power}")
+                    print(f"  TX Power: {message.tx_power}dbm")
+                    print(f"  Temperature: {message.temperature}C")
+                    print(f"  Frequency: {message.frequency_mhz}mhz")
+                    print(f"  Bitrate: {message.bitrate_kbps / 1000:.1f}kbit/s")
+                    print(f"  Frequency Deviation: {message.frequency_deviation}hz\n")
                 else:
-                    print(f"[CONTROLLER] Received: {packet} | RSSI: {rssi}db")                
+                    print(
+                        f"[CONTROLLER] Received unhandled message: {message} | RSSI: {rssi}db"
+                    )
+
+            if self._test_running and time.monotonic() > self._test_timeout:
+                self._test_running = False
+                print("\n[CONTROLLER] Test run complete!")
+                indicate_ready()
+
+                self._render_results_table()
