@@ -1,7 +1,6 @@
 import microcontroller
 from controller_mode import ControllerMode
 from input import MODE_CONTROLLER, MODE_RELAY
-import sys
 from rfm_util import init_rfm69
 from relay_mode import RelayMode
 from rgb_indicator import indicate_error
