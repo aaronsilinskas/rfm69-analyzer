@@ -14,7 +14,7 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# lib/ For CircuitPython, don't ignore lib/
 lib64/
 parts/
 sdist/
@@ -205,3 +205,7 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# CircuitPythonSync
+libArchive/
+stubArchive/
