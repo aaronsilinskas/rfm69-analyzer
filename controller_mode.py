@@ -1,6 +1,6 @@
 import time
 import adafruit_rfm69
-from input import MODE_RELAY, check_serial_input, get_user_input
+from input import MODE_RELAY, get_user_command, get_user_input
 from packets import (
     InfoRequest,
     InfoResponse,
@@ -103,7 +103,7 @@ class ControllerMode:
 
         while True:
             # Check for commands
-            key = check_serial_input()
+            key = get_user_command()
 
             if key == "r":
                 print("\n[CONTROLLER] Switching back to relay mode...\n")
