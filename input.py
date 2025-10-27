@@ -13,6 +13,16 @@ def check_serial_input():
         return sys.stdin.read(1)
     return None
 
+def get_user_command(): 
+    cmd = check_serial_input()
+    if cmd:
+        while True:
+            next_char = check_serial_input()
+            if not next_char or next_char in ('\n', '\r'):
+                break
+            cmd += next_char
+        return cmd.strip()
+    return None
 
 def get_user_input(prompt, default):
     """Get user input with a default value"""
