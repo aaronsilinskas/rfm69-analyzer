@@ -8,7 +8,7 @@
         "/Users/AaronH/.vscode/extensions/wmerkens.vscode-circuitpython-v2-0.3.3/stubs",
         "/Users/AaronH/Library/Application Support/Code/User/globalStorage/wmerkens.vscode-circuitpython-v2/bundle/20250810/adafruit-circuitpython-bundle-py-20250810/lib",
         "/Users/AaronH/Library/Application Support/Code/User/globalStorage/padgettholdings.circuitpythonsync/stubs/circuitpython_stubs-10.0.3",
-        "/Users/AaronH/dev/rfm69-analyzer/libArchive/libstubs"
+        "${workspaceFolder}/libArchive/libstubs"
     ],
     "circuitpythonsync.drivepath": "/Volumes/CIRCUITPY",
     "circuitpythonsync.cpboardname": "adafruit_feather_rp2040"
